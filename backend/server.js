@@ -68,13 +68,14 @@ app.post("/predict", upload.single("image"), async (req, res) => {
       );
 
       // Only keep detections with high confidence (e.g., > 0.5)
-      if (confidence > 0.5) {
+      if (confidence > 0.9) {
         detections.push({ x, y, width, height, confidence, classId });
       }
     }
 
     // Send filtered detections
     res.json({ detections });
+    console.log(detections);
   } catch (error) {
     console.error("❌ Prediction Error:", error);
     res.status(500).json({ error: error.message });
