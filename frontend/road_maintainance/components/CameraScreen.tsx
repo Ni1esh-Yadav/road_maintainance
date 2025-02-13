@@ -13,7 +13,7 @@ const CameraScreen = () => {
   const [photoUri, setPhotoUri] = useState<string | null>(null);
   const [address, setAddress] = useState<string | null>(null);
   const [permission, requestPermission] = useCameraPermissions();
-
+  
   useEffect(() => {
     (async () => {
       if (!permission) return;
@@ -27,7 +27,12 @@ const CameraScreen = () => {
         }
       }
     })();
-  }, [permission]);
+    if (photoUri){
+      setTimeout(()=>{
+        console.log("Rendering image with URI :" ,photoUri);
+      },1000);
+      }
+  }, [permission,photoUri]);
 
   const takePicture = async () => {
     if (!cameraRef.current) return;
@@ -35,7 +40,8 @@ const CameraScreen = () => {
     const photo = await cameraRef.current.takePictureAsync(); // ✅ Correct method
     if (!photo?.uri) return;
 
-    setPhotoUri(photo.uri);
+   setPhotoUri(photo.uri);
+   console.log("Photo taken with URI:", photo.uri);
 
     const imagePath = `${FileSystem.cacheDirectory}photo.jpg`;
 
@@ -84,7 +90,7 @@ const CameraScreen = () => {
         type: "image/jpeg",
       } as any);
 
-      const response = await fetch("http://192.168.1.12:5000/predict", {
+      const response = await fetch("http://192.168.24.244:5000/predict", {
         method: "POST",
         headers: {
           "Content-Type": "multipart/form-data",
