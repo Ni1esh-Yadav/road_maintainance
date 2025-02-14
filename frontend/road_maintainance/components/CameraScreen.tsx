@@ -13,7 +13,22 @@ const CameraScreen = () => {
   const [photoUri, setPhotoUri] = useState<string | null>(null);
   const [address, setAddress] = useState<string | null>(null);
   const [permission, requestPermission] = useCameraPermissions();
-  
+  const [detections, setDetections] = useState<any[]>([]);
+const [originalDimensions, setOriginalDimensions] = useState({ 
+  width: 0, 
+  height: 0 
+});
+const [imageDisplayInfo, setImageDisplayInfo] = useState<{
+  displayedWidth: number;
+  displayedHeight: number;
+  offsetX: number;
+  offsetY: number;
+  scaleX: number;
+  scaleY: number;
+} | null>(null);
+
+
+
   useEffect(() => {
     (async () => {
       if (!permission) return;
@@ -36,23 +51,43 @@ const CameraScreen = () => {
 
   const takePicture = async () => {
     if (!cameraRef.current) return;
-
-    const photo = await cameraRef.current.takePictureAsync(); // ✅ Correct method
-    if (!photo?.uri) return;
-
-   setPhotoUri(photo.uri);
-   console.log("Photo taken with URI:", photo.uri);
-
-    const imagePath = `${FileSystem.cacheDirectory}photo.jpg`;
-
-    await FileSystem.moveAsync({
-      from: photo.uri,
-      to: imagePath,
-    });
-
-    getUserAddress(); // Fetch location and address
-    await sendToBackend(imagePath);
+  
+    try {
+      const photo = await cameraRef.current.takePictureAsync();
+      if (!photo?.uri) return; // Check here
+  
+      setPhotoUri(photo.uri);
+      setOriginalDimensions({
+        width: photo.width,
+        height: photo.height
+      });
+  
+      const imagePath = `${FileSystem.cacheDirectory}photo.jpg`;
+      await FileSystem.moveAsync({
+        from: photo.uri,
+        to: imagePath,
+      });
+  
+      getUserAddress();
+      const responseData = await sendToBackend(imagePath);
+      setDetections(responseData.detections);
+    } catch (error) {
+      console.error("Camera Error:", error);
+    }
   };
+
+  //  console.log("Photo taken with URI:", photo.uri);
+
+  //   const imagePath = `${FileSystem.cacheDirectory}photo.jpg`;
+
+  //   await FileSystem.moveAsync({
+  //     from: photo.uri,
+  //     to: imagePath,
+  //   });
+
+  //   getUserAddress(); // Fetch location and address
+  //   await sendToBackend(imagePath);
+  // };
 
   const getUserAddress = async () => {
     try {
@@ -98,8 +133,16 @@ const CameraScreen = () => {
         body: formData,
       });
 
+      // const responseData = await response.json();
+      // return responseData; // Contains detections
+
       if (!response.ok) throw new Error("Failed to send image.");
       console.log("Image successfully sent!");
+
+      //rtn order and error handling
+      const responseData = await response.json();
+      return responseData;
+
     } catch (error) {
       console.error("Error sending image:", error);
       Alert.alert("Upload Failed", "Could not send the image.");
@@ -117,9 +160,68 @@ const CameraScreen = () => {
 
         {photoUri && (
           <View style={styles.imageContainer}>
-            <Image source={{ uri: photoUri }} style={styles.image} />
-            <Text style={styles.addressText}>
-              {address || "Fetching address..."}
+             {photoUri && (
+               <View style={styles.imageContainer}>
+                   <Image
+                    source={{ uri: photoUri }}
+                              style={styles.image}
+                        onLayout={(event) => {
+        const containerWidth = event.nativeEvent.layout.width;
+        const containerHeight = event.nativeEvent.layout.height;
+        
+        // Calculate displayed dimensions and scaling factors
+        const aspectRatio = originalDimensions.width / originalDimensions.height;
+        let displayedWidth, displayedHeight;
+
+        if (containerWidth / containerHeight > aspectRatio) {
+          displayedHeight = containerHeight;
+          displayedWidth = aspectRatio * displayedHeight;
+        } else {
+          displayedWidth = containerWidth;
+          displayedHeight = displayedWidth / aspectRatio;
+        }
+
+        const offsetX = (containerWidth - displayedWidth) / 2;
+        const offsetY = (containerHeight - displayedHeight) / 2;
+        
+        setImageDisplayInfo({
+          displayedWidth,
+          displayedHeight,
+          offsetX,
+          offsetY,
+          scaleX: displayedWidth / originalDimensions.width,
+          scaleY: displayedHeight / originalDimensions.height,
+        });
+      }}
+    />  
+
+{imageDisplayInfo && detections.map((detection, index) => {
+      const left = detection.x * imageDisplayInfo.scaleX + imageDisplayInfo.offsetX;
+      const top = detection.y * imageDisplayInfo.scaleY + imageDisplayInfo.offsetY;
+      const width = detection.width * imageDisplayInfo.scaleX;
+      const height = detection.height * imageDisplayInfo.scaleY;
+
+      return (
+        <View
+          key={index}
+          style={{
+            position: 'absolute',
+            left,
+            top,
+            width,
+            height,
+            borderWidth: 2,
+            borderColor: 'red',
+            backgroundColor: 'transparent',
+          }}
+        />
+      );
+    })}
+  </View>
+)}         
+    
+  <Text style={styles.addressText}>
+          {address || "Fetching address..."}
             </Text>
           </View>
         )}
@@ -158,7 +260,9 @@ const styles = StyleSheet.create({
     width: 200,
     height: 200,
     borderRadius: 10,
+    resizeMode: 'contain', // Maintain aspect ratio
   },
+  
   addressText: {
     marginTop: 10,
     color: "white",
