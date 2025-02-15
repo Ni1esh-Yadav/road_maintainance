@@ -8,170 +8,187 @@ const { v4: uuidv4 } = require("uuid");
 
 const app = express();
 const upload = multer({ dest: "uploads/" });
-
-// Add CORS middleware
-app.use((req, res, next) => {
-  res.header("Access-Control-Allow-Origin", "*");
-  res.header(
-    "Access-Control-Allow-Headers",
-    "Origin, X-Requested-With, Content-Type, Accept"
-  );
-  next();
-});
-
-// Create results directory if not exists
+const targetSize = 640; // YOLOv8 input size
 const resultsDir = path.join(__dirname, "results");
-if (!fs.existsSync(resultsDir)) {
-  fs.mkdirSync(resultsDir);
-}
 
-// Serve saved images
-app.use("/results", express.static(resultsDir));
+// Create directories if they don't exist
+if (!fs.existsSync(resultsDir)) fs.mkdirSync(resultsDir, { recursive: true });
 
+// Load ONNX model
 let session;
-
-// Load ONNX Model
-async function loadModel() {
+(async () => {
   try {
     session = await ort.InferenceSession.create(
       path.join(__dirname, "YOLOv8_Small_RDD.onnx")
     );
-    console.log("✅ ONNX Model Loaded Successfully!");
-  } catch (error) {
-    console.error("❌ Error Loading ONNX Model:", error);
+    console.log("✅ Model loaded successfully");
+  } catch (e) {
+    console.error("❌ Failed to load model:", e);
     process.exit(1);
   }
-}
+})();
 
-// Preprocess Image for ONNX Model
+// Middleware
+app.use(express.json());
+app.use("/results", express.static(resultsDir));
+
 async function preprocessImage(imagePath) {
-  try {
-    const { data, info } = await sharp(imagePath)
-      .resize(640, 640)
-      .toFormat("png")
-      .removeAlpha()
-      .raw()
-      .toBuffer({ resolveWithObject: true });
+  const metadata = await sharp(imagePath).metadata();
+  const originalWidth = metadata.width;
+  const originalHeight = metadata.height;
 
-    const float32Array = new Float32Array(data.length);
-    for (let i = 0; i < data.length; i++) {
-      float32Array[i] = data[i] / 255.0;
-    }
+  const scale = Math.min(
+    targetSize / originalWidth,
+    targetSize / originalHeight
+  );
+  const scaledWidth = Math.round(originalWidth * scale);
+  const scaledHeight = Math.round(originalHeight * scale);
 
-    return new ort.Tensor("float32", float32Array, [
-      1,
-      3,
-      info.height,
-      info.width,
-    ]);
-  } catch (error) {
-    console.error("❌ Image preprocessing failed:", error);
-    throw error;
+  // Resize and convert to raw RGB format
+  const rawBuffer = await sharp(imagePath)
+    .resize(scaledWidth, scaledHeight)
+    .extend({
+      top: Math.round((targetSize - scaledHeight) / 2),
+      bottom:
+        targetSize - scaledHeight - Math.round((targetSize - scaledHeight) / 2),
+      left: Math.round((targetSize - scaledWidth) / 2),
+      right:
+        targetSize - scaledWidth - Math.round((targetSize - scaledWidth) / 2),
+      background: { r: 0, g: 0, b: 0, alpha: 1 },
+    })
+    .removeAlpha()
+    .raw()
+    .toBuffer();
+
+  // Convert raw RGB buffer to Float32Array (normalize to [0,1] for ONNX input)
+  const float32Data = new Float32Array(rawBuffer.length);
+  for (let i = 0; i < rawBuffer.length; i++) {
+    float32Data[i] = rawBuffer[i] / 255.0;
   }
+
+  return {
+    buffer: float32Data,
+    originalWidth,
+    originalHeight,
+    scale,
+    offsetX: Math.round((targetSize - scaledWidth) / 2),
+    offsetY: Math.round((targetSize - scaledHeight) / 2),
+  };
 }
 
-const ensureFileExists = (filePath, timeout = 5000) => {
-  return new Promise((resolve, reject) => {
-    const start = Date.now();
-    const check = () => {
-      if (fs.existsSync(filePath)) {
-        resolve(true);
-      } else if (Date.now() - start > timeout) {
-        reject(new Error("File creation timeout"));
-      } else {
-        setTimeout(check, 100);
-      }
-    };
-    check();
-  });
-};
+// Detection processing
+function processDetections(
+  output,
+  originalWidth,
+  originalHeight,
+  scale,
+  offsetX,
+  offsetY
+) {
+  const detections = [];
+  const rawData = Array.from(output.data);
 
-// Prediction Route
+  for (let i = 0; i < rawData.length; i += 6) {
+    const [x_center, y_center, width, height, confidence, classId] =
+      rawData.slice(i, i + 6);
+
+    if (confidence > 0.5) {
+      // Adjust coordinates for letterboxing and scale
+      const x = (((x_center - offsetX) / targetSize) * originalWidth) / scale;
+      const y = (((y_center - offsetY) / targetSize) * originalHeight) / scale;
+      const w = ((width / targetSize) * originalWidth) / scale;
+      const h = ((height / targetSize) * originalHeight) / scale;
+
+      detections.push({
+        x: Math.max(0, x - w / 2),
+        y: Math.max(0, y - h / 2),
+        width: w,
+        height: h,
+        confidence,
+        classId,
+      });
+    }
+  }
+  return detections;
+}
+
+// Main prediction endpoint
 app.post("/predict", upload.single("image"), async (req, res) => {
   try {
-    if (!req.file) {
-      return res.status(400).json({ error: "No file uploaded!" });
+    const { buffer, originalWidth, originalHeight, scale, offsetX, offsetY } =
+      await preprocessImage(req.file.path);
+
+    // Create tensor and run inference
+    const tensor = new ort.Tensor("float32", new Float32Array(buffer), [
+      1,
+      3,
+      targetSize,
+      targetSize,
+    ]);
+
+    const outputs = await session.run({ images: tensor });
+    console.log("ONNX Model Outputs:", outputs);
+
+    const output = outputs[Object.keys(outputs)[0]]; // Extract first output tensor
+    if (!output || !output.data) {
+      throw new Error("Model did not return valid output");
     }
-
-    // Get original image metadata
-    const metadata = await sharp(req.file.path).metadata();
-    const originalWidth = metadata.width;
-    const originalHeight = metadata.height;
-
-    // Process image and run detection
-    const imageTensor = await preprocessImage(req.file.path);
-    const results = await session.run({ images: imageTensor });
-    const rawData = results.output0.cpuData;
 
     // Process detections
-    const detections = [];
-    for (let i = 0; i < rawData.length; i += 6) {
-      const [x_center, y_center, width, height, confidence] = rawData.slice(
-        i,
-        i + 6
-      );
+    const detections = processDetections(
+      output,
+      originalWidth,
+      originalHeight,
+      scale,
+      offsetX,
+      offsetY
+    );
 
-      // Ensure confidence value is within a valid range
-      if (confidence > 630.5) {
-        const detection = {
-          x: (x_center - width / 2) * originalWidth,
-          y: (y_center - height / 2) * originalHeight,
-          width: width * originalWidth,
-          height: height * originalHeight,
-          confidence: confidence,
-        };
-        detections.push(detection);
-      }
-    }
-
-    // Generate result image
+    // Generate result image with bounding boxes
     const resultFilename = `result_${uuidv4()}.jpg`;
     const resultPath = path.join(resultsDir, resultFilename);
 
     // Create SVG overlay
-    const svg = `
-      <svg width="${originalWidth}" height="${originalHeight}">
-        ${detections
-          .map(
-            (d) => `
-          <rect x="${d.x}" y="${d.y}"
-                width="${d.width}" height="${d.height}"
-                stroke="red" fill="none" stroke-width="3"/>
-        `
-          )
-          .join("")}
-      </svg>
-    `;
+    const svg = `<svg width="${originalWidth}" height="${originalHeight}">
+      ${detections
+        .map(
+          (d) => `
+        <rect x="${d.x}" y="${d.y}" 
+              width="${d.width}" height="${d.height}"
+              stroke="red" fill="none" stroke-width="${Math.max(
+                2,
+                originalWidth / 200
+              )}"/>
+      `
+        )
+        .join("")}
+    </svg>`;
 
     // Composite image with overlay
     await sharp(req.file.path)
-      .composite([{ input: Buffer.from(svg), top: 0, left: 0 }])
+      .composite([{ input: Buffer.from(svg), blend: "over" }])
       .toFile(resultPath);
 
-    // Ensure the file exists before sending response
-    await ensureFileExists(resultPath);
-
-    const resultUrl = `http://192.168.1.12:5000/results/${resultFilename}`;
     res.json({
+      success: true,
+      imageUrl: `http://192.168.1.12:5000/results/${resultFilename}`,
       detections,
-      imageUrl: resultUrl,
       originalWidth,
       originalHeight,
     });
-    console.log(detections);
   } catch (error) {
-    console.error("❌ Prediction Error:", error);
+    console.error("Prediction error:", error);
     res.status(500).json({
-      error: error.message,
-      stack: process.env.NODE_ENV === "development" ? error.stack : undefined,
+      success: false,
+      error: "Failed to process image",
+      details: error.message,
     });
   }
 });
 
-// Start server after model loads
-loadModel().then(() => {
-  app.listen(5000, () => {
-    console.log("🚀 Server running on port 5000");
-    console.log("🔗 Test endpoint: POST http://localhost:5000/predict");
-  });
+// Start server
+const PORT = process.env.PORT || 5000;
+app.listen(PORT, () => {
+  console.log(`🚀 Server running on port ${PORT}`);
+  console.log(`🔗 Predict endpoint: POST http://localhost:${PORT}/predict`);
 });
