@@ -39,10 +39,26 @@ const HistoryScreen = () => {
     try {
       const fileUri = FileSystem.documentDirectory + "history.json";
       const content = await FileSystem.readAsStringAsync(fileUri);
-      setHistory(JSON.parse(content));
+
+      const parsedData = JSON.parse(content);
+      setHistory(parsedData);
+
+      console.log("Full History Data:", parsedData);
+
+      // parsedData.forEach((entry: any, index: number) => {
+      //   console.log(`Entry ${index}:`);
+      //   console.log(`ID: ${entry.id}`);
+      //   console.log(`Image URL: ${entry.imageUrl}`);
+      //   console.log(
+      //     `Original Dimensions: ${entry.originalWidth}x${entry.originalHeight}`
+      //   );
+      //   console.log(
+      //     `Detections (${entry.detections.length}):`,
+      //     entry.detections
+      //   );
+      // });
     } catch (error) {
       console.error("History load failed:", error);
-      //   Alert.alert("Error", "Failed to load history");
     } finally {
       setLoading(false);
     }
@@ -50,6 +66,7 @@ const HistoryScreen = () => {
 
   const handleImageLoad = (item: HistoryItem) => async () => {
     if (imageDimensions[item.id]) return;
+    // console.log("i am inside handleImageLoad", item.imageUrl);
 
     Image.getSize(
       item.imageUrl,

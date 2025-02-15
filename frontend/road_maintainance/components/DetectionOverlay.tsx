@@ -1,5 +1,5 @@
 import React from "react";
-import { View, StyleSheet } from "react-native";
+import { View } from "react-native";
 
 interface Detection {
   x: number;
@@ -8,59 +8,66 @@ interface Detection {
   height: number;
 }
 
-interface Props {
+interface BoundingBoxProps {
   detections: Detection[];
   imageWidth: number;
   imageHeight: number;
   originalWidth: number;
   originalHeight: number;
-  style?: any;
 }
 
-const DetectionOverlay: React.FC<Props> = ({
+const BoundingBoxes: React.FC<BoundingBoxProps> = ({
   detections,
   imageWidth,
   imageHeight,
   originalWidth,
   originalHeight,
-  style,
 }) => {
-  if (!originalWidth || !originalHeight) return null;
-
-  const scaleX = imageWidth / originalWidth;
-  const scaleY = imageHeight / originalHeight;
-
   return (
-    <View style={[styles.container, style]}>
-      {detections.map((detection, index) => (
-        <View
-          key={`detection-${index}`}
-          style={[
-            styles.box,
-            {
-              left: detection.x * scaleX,
-              top: detection.y * scaleY,
-              width: detection.width * scaleX,
-              height: detection.height * scaleY,
-            },
-          ]}
-        />
-      ))}
-    </View>
+    <>
+      {detections.map((detection, index) => {
+        // Normalize values if they are absolute pixel values
+        let normX = detection.x > 1 ? detection.x / originalWidth : detection.x;
+        let normY =
+          detection.y > 1 ? detection.y / originalHeight : detection.y;
+        let normWidth =
+          detection.width > 1
+            ? detection.width / originalWidth
+            : detection.width;
+        let normHeight =
+          detection.height > 1
+            ? detection.height / originalHeight
+            : detection.height;
+
+        // Apply scaling
+        let boxWidth = normWidth * imageWidth;
+        let boxHeight = normHeight * imageHeight;
+        let left = normX * imageWidth - boxWidth / 2; // Adjust if YOLO format
+        let top = normY * imageHeight - boxHeight / 2; // Adjust if YOLO format
+
+        console.log(`Detection ${index}:`, {
+          original: detection,
+          normalized: { normX, normY, normWidth, normHeight },
+          scaled: { left, top, boxWidth, boxHeight },
+        });
+
+        return (
+          <View
+            key={`detection-${index}`}
+            style={{
+              position: "absolute",
+              borderColor: "red",
+              borderWidth: 2,
+              left,
+              top,
+              width: boxWidth,
+              height: boxHeight,
+            }}
+          />
+        );
+      })}
+    </>
   );
 };
 
-const styles = StyleSheet.create({
-  container: {
-    position: "absolute",
-  },
-  box: {
-    position: "absolute",
-    borderWidth: 2,
-    borderColor: "#FF0000",
-    backgroundColor: "rgba(255,0,0,0.2)",
-    zIndex: 1,
-  },
-});
-
-export default DetectionOverlay;
+export default BoundingBoxes;

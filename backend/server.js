@@ -1,3 +1,4 @@
+require("dotenv").config();
 const express = require("express");
 const multer = require("multer");
 const sharp = require("sharp");
@@ -5,33 +6,45 @@ const ort = require("onnxruntime-node");
 const fs = require("fs");
 const path = require("path");
 const { v4: uuidv4 } = require("uuid");
+const mongoose = require("mongoose");
+const Detection = require("./models/Detection");
+const bcrypt = require("bcryptjs");
+const jwt = require("jsonwebtoken");
+const { body, validationResult } = require("express-validator");
+const User = require("./models/User");
+const Admin = require("./models/Admin");
+const auth = require("./middleware/auth");
 
 const app = express();
 const upload = multer({ dest: "uploads/" });
-const targetSize = 640; // YOLOv8 input size
-const resultsDir = path.join(__dirname, "results");
+const targetSize = 640;
+app.use(express.json());
+const JWT_SECRET = process.env.JWT_SECRET;
 
-// Create directories if they don't exist
-if (!fs.existsSync(resultsDir)) fs.mkdirSync(resultsDir, { recursive: true });
+// Connect to MongoDB
+mongoose
+  .connect(process.env.MONGO_URI, {
+    useNewUrlParser: true,
+    useUnifiedTopology: true,
+  })
+  .then(() => console.log("✅ MongoDB Connected"))
+  .catch((err) => console.error("❌ MongoDB Connection Error:", err));
 
-// Load ONNX model
+// Load ONNX Model
 let session;
 (async () => {
   try {
     session = await ort.InferenceSession.create(
       path.join(__dirname, "YOLOv8_Small_RDD.onnx")
     );
-    console.log("✅ Model loaded successfully");
+    console.log("✅ ONNX Model Loaded Successfully");
   } catch (e) {
-    console.error("❌ Failed to load model:", e);
+    console.error("❌ Model Loading Failed:", e);
     process.exit(1);
   }
 })();
 
-// Middleware
-app.use(express.json());
-app.use("/results", express.static(resultsDir));
-
+// Image Preprocessing
 async function preprocessImage(imagePath) {
   const metadata = await sharp(imagePath).metadata();
   const originalWidth = metadata.width;
@@ -44,7 +57,6 @@ async function preprocessImage(imagePath) {
   const scaledWidth = Math.round(originalWidth * scale);
   const scaledHeight = Math.round(originalHeight * scale);
 
-  // Resize and convert to raw RGB format
   const rawBuffer = await sharp(imagePath)
     .resize(scaledWidth, scaledHeight)
     .extend({
@@ -60,31 +72,16 @@ async function preprocessImage(imagePath) {
     .raw()
     .toBuffer();
 
-  // Convert raw RGB buffer to Float32Array (normalize to [0,1] for ONNX input)
   const float32Data = new Float32Array(rawBuffer.length);
   for (let i = 0; i < rawBuffer.length; i++) {
     float32Data[i] = rawBuffer[i] / 255.0;
   }
 
-  return {
-    buffer: float32Data,
-    originalWidth,
-    originalHeight,
-    scale,
-    offsetX: Math.round((targetSize - scaledWidth) / 2),
-    offsetY: Math.round((targetSize - scaledHeight) / 2),
-  };
+  return { buffer: float32Data, originalWidth, originalHeight, scale };
 }
 
-// Detection processing
-function processDetections(
-  output,
-  originalWidth,
-  originalHeight,
-  scale,
-  offsetX,
-  offsetY
-) {
+// Process ONNX Detections
+function processDetections(output, originalWidth, originalHeight, scale) {
   const detections = [];
   const rawData = Array.from(output.data);
 
@@ -93,17 +90,11 @@ function processDetections(
       rawData.slice(i, i + 6);
 
     if (confidence > 0.5) {
-      // Adjust coordinates for letterboxing and scale
-      const x = (((x_center - offsetX) / targetSize) * originalWidth) / scale;
-      const y = (((y_center - offsetY) / targetSize) * originalHeight) / scale;
-      const w = ((width / targetSize) * originalWidth) / scale;
-      const h = ((height / targetSize) * originalHeight) / scale;
-
       detections.push({
-        x: Math.max(0, x - w / 2),
-        y: Math.max(0, y - h / 2),
-        width: w,
-        height: h,
+        x: ((x_center / targetSize) * originalWidth) / scale,
+        y: ((y_center / targetSize) * originalHeight) / scale,
+        width: ((width / targetSize) * originalWidth) / scale,
+        height: ((height / targetSize) * originalHeight) / scale,
         confidence,
         classId,
       });
@@ -112,72 +103,63 @@ function processDetections(
   return detections;
 }
 
-// Main prediction endpoint
+// Prediction Endpoint
 app.post("/predict", upload.single("image"), async (req, res) => {
   try {
-    const { buffer, originalWidth, originalHeight, scale, offsetX, offsetY } =
+    const { buffer, originalWidth, originalHeight, scale } =
       await preprocessImage(req.file.path);
-
-    // Create tensor and run inference
     const tensor = new ort.Tensor("float32", new Float32Array(buffer), [
       1,
       3,
       targetSize,
       targetSize,
     ]);
-
     const outputs = await session.run({ images: tensor });
-    console.log("ONNX Model Outputs:", outputs);
+    const output = outputs[Object.keys(outputs)[0]];
 
-    const output = outputs[Object.keys(outputs)[0]]; // Extract first output tensor
-    if (!output || !output.data) {
-      throw new Error("Model did not return valid output");
-    }
+    if (!output || !output.data) throw new Error("Invalid Model Output");
 
-    // Process detections
     const detections = processDetections(
       output,
       originalWidth,
       originalHeight,
-      scale,
-      offsetX,
-      offsetY
+      scale
     );
+    const imageId = uuidv4();
+    const resultImagePath = path.join(__dirname, "uploads", `${imageId}.jpg`);
 
-    // Generate result image with bounding boxes
-    const resultFilename = `result_${uuidv4()}.jpg`;
-    const resultPath = path.join(resultsDir, resultFilename);
-
-    // Create SVG overlay
+    // Draw Bounding Boxes
     const svg = `<svg width="${originalWidth}" height="${originalHeight}">
       ${detections
         .map(
-          (d) => `
-        <rect x="${d.x}" y="${d.y}" 
-              width="${d.width}" height="${d.height}"
-              stroke="red" fill="none" stroke-width="${Math.max(
-                2,
-                originalWidth / 200
-              )}"/>
-      `
+          (d) =>
+            `<rect x="${d.x}" y="${d.y}" width="${d.width}" height="${d.height}" stroke="red" fill="none" stroke-width="2"/>`
         )
         .join("")}
     </svg>`;
 
-    // Composite image with overlay
     await sharp(req.file.path)
       .composite([{ input: Buffer.from(svg), blend: "over" }])
-      .toFile(resultPath);
+      .toFile(resultImagePath);
 
-    res.json({
-      success: true,
-      imageUrl: `http://192.168.1.12:5000/results/${resultFilename}`,
+    // Save to MongoDB
+    const detectionData = await Detection.create({
+      imageUrl: `http://localhost:5000/uploads/${imageId}.jpg`,
       detections,
       originalWidth,
       originalHeight,
+      userId: req.body.userId, // Assuming frontend sends user ID
+      status: "pending",
+    });
+
+    res.json({
+      success: true,
+      detectionId: detectionData._id,
+      imageUrl: detectionData.imageUrl,
+      detections,
     });
   } catch (error) {
-    console.error("Prediction error:", error);
+    console.error("Prediction Error:", error);
     res.status(500).json({
       success: false,
       error: "Failed to process image",
@@ -186,9 +168,135 @@ app.post("/predict", upload.single("image"), async (req, res) => {
   }
 });
 
-// Start server
-const PORT = process.env.PORT || 5000;
-app.listen(PORT, () => {
-  console.log(`🚀 Server running on port ${PORT}`);
-  console.log(`🔗 Predict endpoint: POST http://localhost:${PORT}/predict`);
+// Admin Approval Endpoint
+app.put("/approve/:id", auth, async (req, res) => {
+  if (req.user.role !== "admin")
+    return res.status(403).json({ error: "Forbidden" });
+
+  const detection = await Detection.findByIdAndUpdate(
+    req.params.id,
+    { status: "approved" },
+    { new: true }
+  );
+  if (!detection) return res.status(404).json({ error: "Detection not found" });
+
+  res.json({ message: "Image approved", detection });
 });
+
+// Fetch Detections for User
+app.get("/detections/:userId", async (req, res) => {
+  try {
+    const detections = await Detection.find({ userId: req.params.userId });
+    res.json({ success: true, detections });
+  } catch (error) {
+    res
+      .status(500)
+      .json({ success: false, error: "Error fetching detections" });
+  }
+});
+
+app.post(
+  "/register",
+  [
+    body("name").notEmpty(),
+    body("email").isEmail(),
+    body("password").isLength({ min: 6 }),
+  ],
+  async (req, res) => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty())
+      return res.status(400).json({ errors: errors.array() });
+
+    const { name, email, password } = req.body;
+    try {
+      let user = await User.findOne({ email });
+      if (user) return res.status(400).json({ error: "User already exists" });
+
+      // ✅ Hash Password before saving
+      const salt = await bcrypt.genSalt(10);
+      const hashedPassword = await bcrypt.hash(password, salt);
+
+      user = new User({ name, email, password: hashedPassword });
+      await user.save();
+
+      // ✅ Ensure JWT_SECRET is set
+      if (!JWT_SECRET) throw new Error("JWT_SECRET is missing in .env file");
+
+      const token = jwt.sign({ id: user._id, role: "user" }, JWT_SECRET, {
+        expiresIn: "1d",
+      });
+
+      res.json({
+        token,
+        user: { id: user._id, name: user.name, role: "user" },
+      });
+    } catch (error) {
+      console.error("Registration Error:", error);
+      res.status(500).json({ error: error.message || "Server error" });
+    }
+  }
+);
+
+app.post(
+  "/login",
+  [
+    body("email").isEmail(),
+    body("password").isLength({ min: 6 }),
+    body("role").isIn(["user", "admin"]),
+  ],
+  async (req, res) => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty())
+      return res.status(400).json({ errors: errors.array() });
+
+    const { email, password, role } = req.body;
+    try {
+      const Model = role === "admin" ? Admin : User;
+      const user = await Model.findOne({ email });
+
+      if (!user) return res.status(400).json({ error: "Invalid credentials" });
+
+      const isMatch = await bcrypt.compare(password, user.password);
+      if (!isMatch)
+        return res.status(400).json({ error: "Invalid credentials" });
+
+      const token = jwt.sign({ id: user._id, role: user.role }, JWT_SECRET, {
+        expiresIn: "1d",
+      });
+      res.json({
+        token,
+        user: { id: user._id, name: user.name, role: user.role },
+      });
+    } catch (error) {
+      res.status(500).json({ error: "Server error" });
+    }
+  }
+);
+
+app.post("/register-admin", async (req, res) => {
+  const { name, email, password } = req.body;
+  if (!name || !email || !password)
+    return res.status(400).json({ error: "All fields required" });
+
+  try {
+    let admin = await Admin.findOne({ email });
+    if (admin) return res.status(400).json({ error: "Admin already exists" });
+
+    admin = new Admin({ name, email, password });
+    await admin.save();
+
+    const token = jwt.sign({ id: admin._id, role: "admin" }, JWT_SECRET, {
+      expiresIn: "1d",
+    });
+    res.json({
+      token,
+      admin: { id: admin._id, name: admin.name, role: "admin" },
+    });
+  } catch (error) {
+    res.status(500).json({ error: "Server error" });
+  }
+});
+
+// Start Server
+const PORT = process.env.PORT || 5000;
+app.listen(PORT, () => console.log(`🚀 Server running on port ${PORT}`));
