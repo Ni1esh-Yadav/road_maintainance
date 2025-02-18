@@ -1,6 +1,6 @@
 import { View, Text, Button } from "react-native";
 import { useRouter } from "expo-router";
-import Svg, { Line } from "react-native-svg";
+import { Svg, Line } from "react-native-svg";
 
 export default function HomeScreen() {
   const router = useRouter();
