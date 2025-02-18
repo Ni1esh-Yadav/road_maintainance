@@ -35,7 +35,7 @@ export default function HomeScreen() {
         <View style={{ marginVertical: 10 }} />
         <Button
           title="Register as Admin"
-          onPress={() => router.push("./(auth)/register")}
+          onPress={() => router.push("./(auth)/admin-register")}
           color="#555"
         />
       </View>

@@ -11,14 +11,14 @@ const Register = () => {
 
   const handleRegister = async () => {
     try {
-      await axios.post("http://192.168.1.12:5000/register", {
+      await axios.post("http://192.168.7.15:5000/register", {
         name,
         email,
         password,
       });
       console.log(name);
       Alert.alert("Success", "Registration successful, please login.");
-      router.replace("./(auth)/login");
+      router.replace("./login");
     } catch (err) {
       Alert.alert("Error", "Registration failed");
     }

@@ -29,6 +29,7 @@ mongoose
   })
   .then(() => console.log("✅ MongoDB Connected"))
   .catch((err) => console.error("❌ MongoDB Connection Error:", err));
+console.log(process.env.MONGO_URI);
 
 // Load ONNX Model
 let session;
@@ -212,11 +213,8 @@ app.post(
       let user = await User.findOne({ email });
       if (user) return res.status(400).json({ error: "User already exists" });
 
-      // ✅ Hash Password before saving
-      const salt = await bcrypt.genSalt(10);
-      const hashedPassword = await bcrypt.hash(password, salt);
-
-      user = new User({ name, email, password: hashedPassword });
+      console.log({ name, email, password });
+      user = new User({ name, email, password });
       await user.save();
 
       // ✅ Ensure JWT_SECRET is set
@@ -283,7 +281,8 @@ app.post("/register-admin", async (req, res) => {
     let admin = await Admin.findOne({ email });
     if (admin) return res.status(400).json({ error: "Admin already exists" });
 
-    admin = new Admin({ name, email, password });
+    admin = new Admin({ name, email, password, role: "admin" });
+    console.log("i am inside register-admin route", { name, email, password });
     await admin.save();
 
     const token = jwt.sign({ id: admin._id, role: "admin" }, JWT_SECRET, {
