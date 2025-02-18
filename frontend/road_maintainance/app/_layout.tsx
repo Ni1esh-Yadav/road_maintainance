@@ -1,39 +1,14 @@
-import { Tabs } from "expo-router";
-import { MaterialIcons } from "@expo/vector-icons";
+// import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
+// import { Tabs } from "expo-router";
 
-export default function TabLayout() {
-  return (
-    <Tabs>
-      {/* Camera Tab */}
-      <Tabs.Screen
-        name="index"
-        options={{
-          title: "Camera",
-          tabBarIcon: ({ color }) => (
-            <MaterialIcons name="photo-camera" size={24} color={color} />
-          ),
-        }}
-      />
+// const Tab = createBottomTabNavigator();
 
-      {/* History Tab */}
-      <Tabs.Screen
-        name="history"
-        options={{
-          title: "History",
-          tabBarIcon: ({ color }) => (
-            <MaterialIcons name="history" size={24} color={color} />
-          ),
-        }}
-      />
-      <Tabs.Screen
-        name="auth"
-        options={{
-          title: "register",
-          tabBarIcon: ({ color }) => (
-            <MaterialIcons name="history" size={24} color={color} />
-          ),
-        }}
-      />
-    </Tabs>
-  );
-}
+// export default function Layout() {
+//   return (
+//     <Tabs>
+//       <Tabs.Screen name="index" options={{ title: "Home" }} />
+//       <Tabs.Screen name="camera" options={{ title: "Camera" }} />
+//       <Tabs.Screen name="history" options={{ title: "History" }} />
+//     </Tabs>
+//   );
+// }

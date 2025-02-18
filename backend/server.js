@@ -250,6 +250,7 @@ app.post(
       return res.status(400).json({ errors: errors.array() });
 
     const { email, password, role } = req.body;
+    console.log("I am inside login route", { email, password, role });
     try {
       const Model = role === "admin" ? Admin : User;
       const user = await Model.findOne({ email });

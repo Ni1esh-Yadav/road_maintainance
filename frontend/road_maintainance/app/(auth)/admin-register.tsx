@@ -1,42 +1,49 @@
 import { useState } from "react";
 import { View, Text, TextInput, Button, Alert, StyleSheet } from "react-native";
-import AsyncStorage from "@react-native-async-storage/async-storage";
 import axios from "axios";
 import { useRouter } from "expo-router";
 
-const Login = () => {
+const RegisterAdmin = () => {
   const router = useRouter();
+  const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [role, setRole] = useState("");
 
-  const handleLogin = async () => {
+  const handleRegister = async () => {
     try {
-      const res = await axios.post("http://192.168.1.12:5000/login", {
+      await axios.post("http://192.168.1.12:5000/register-admin", {
+        name,
         email,
         password,
-        role,
       });
-      await AsyncStorage.setItem("token", res.data.token);
-      Alert.alert("Success", "Logged in successfully");
-      router.replace("./(tabs)/profile"); // Navigate to home
+      Alert.alert("Success", "Registration successful, please login.");
+      router.replace("./(auth)/login");
     } catch (err) {
-      Alert.alert("Error", "Invalid email or password");
+      Alert.alert("Error", "Registration failed");
     }
   };
 
   return (
     <View style={styles.container}>
-      <Text style={styles.title}>Login</Text>
+      <Text style={styles.title}>Admin Registration</Text>
 
-      <Text style={styles.label}>Email:</Text>
+      <Text style={styles.label}>Admin Name:</Text>
+      <TextInput
+        style={styles.input}
+        value={name}
+        onChangeText={setName}
+        placeholder="Enter name"
+        placeholderTextColor="#aaa"
+      />
+
+      <Text style={styles.label}>Admin Email:</Text>
       <TextInput
         style={styles.input}
         value={email}
         onChangeText={setEmail}
         autoCapitalize="none"
         keyboardType="email-address"
-        placeholder="Enter your email"
+        placeholder="Enter email"
         placeholderTextColor="#aaa"
       />
 
@@ -46,21 +53,11 @@ const Login = () => {
         value={password}
         onChangeText={setPassword}
         secureTextEntry
-        placeholder="Enter your password"
+        placeholder="Enter password"
         placeholderTextColor="#aaa"
       />
 
-      <Text style={styles.label}>Role:</Text>
-      <TextInput
-        style={styles.input}
-        value={role}
-        onChangeText={setRole}
-        autoCapitalize="none"
-        placeholder="Eg: User or Admin"
-        placeholderTextColor="#aaa"
-      />
-
-      <Button title="Login" onPress={handleLogin} color="#555" />
+      <Button title="Register" onPress={handleRegister} color="#555" />
     </View>
   );
 };
@@ -73,7 +70,7 @@ const styles = StyleSheet.create({
     backgroundColor: "#f5f5f5",
   },
   title: {
-    fontSize: 24,
+    fontSize: 22,
     fontWeight: "bold",
     color: "#333",
     marginBottom: 20,
@@ -96,4 +93,4 @@ const styles = StyleSheet.create({
   },
 });
 
-export default Login;
+export default RegisterAdmin;
