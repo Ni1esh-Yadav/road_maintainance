@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { View, Text, Button } from "react-native";
 import { useRouter } from "expo-router";
-import { getToken } from "../utils/auth";
+import { getToken } from "../../utils/auth";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
 const Home = () => {

@@ -12,14 +12,15 @@ const Login = () => {
 
   const handleLogin = async () => {
     try {
-      const res = await axios.post("http://192.168.7.15:5000/login", {
+      const res = await axios.post("http://192.168.7.80:5000/login", {
         email,
         password,
         role,
       });
       await AsyncStorage.setItem("token", res.data.token);
       Alert.alert("Success", "Logged in successfully");
-      router.replace("./(tabs)/profile"); // Navigate to home
+      router.push("../(user)/home");
+      // router.navigate("../home", { relativeToDirectory: true }); // Navigate to home
     } catch (err) {
       Alert.alert("Error", "Invalid email or password");
     }
