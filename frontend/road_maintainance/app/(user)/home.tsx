@@ -3,6 +3,7 @@ import { View, Text, Button } from "react-native";
 import { useRouter } from "expo-router";
 import { getToken } from "../../utils/auth";
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import HistoryScreen from "../../components/HistoryScreen";
 
 const Home = () => {
   const router = useRouter();
@@ -20,6 +21,7 @@ const Home = () => {
   return authenticated ? (
     <View>
       <Text>Welcome to Home Page</Text>
+      <HistoryScreen />
       <Button
         title="Logout"
         onPress={() => {

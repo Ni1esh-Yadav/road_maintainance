@@ -122,7 +122,7 @@ const HistoryScreen = () => {
                 imageHeight={imageDimensions[item.id].height}
                 originalWidth={item.originalWidth}
                 originalHeight={item.originalHeight}
-                style={styles.overlay}
+                // style={styles.overlay}
               />
             ) : null}
           </View>

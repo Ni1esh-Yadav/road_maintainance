@@ -20,7 +20,6 @@ const Login = () => {
       await AsyncStorage.setItem("token", res.data.token);
       Alert.alert("Success", "Logged in successfully");
       router.push("../(user)/home");
-      // router.navigate("../home", { relativeToDirectory: true }); // Navigate to home
     } catch (err) {
       Alert.alert("Error", "Invalid email or password");
     }
