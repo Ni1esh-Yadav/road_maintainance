@@ -20,6 +20,7 @@ const upload = multer({ dest: "uploads/" });
 const targetSize = 640;
 app.use(express.json());
 const JWT_SECRET = process.env.JWT_SECRET;
+app.use("/uploads", express.static(path.join(__dirname, "uploads")));
 
 // Connect to MongoDB
 mongoose
@@ -45,12 +46,20 @@ let session;
   }
 })();
 
-// Image Preprocessing
 async function preprocessImage(imagePath) {
+  // Log file path for debugging
+  console.log("Preprocessing image at path:", imagePath);
+
+  // Get image metadata
   const metadata = await sharp(imagePath).metadata();
   const originalWidth = metadata.width;
   const originalHeight = metadata.height;
 
+  if (!originalWidth || !originalHeight) {
+    throw new Error("Image metadata missing width or height");
+  }
+
+  // Calculate scale based on target size
   const scale = Math.min(
     targetSize / originalWidth,
     targetSize / originalHeight
@@ -58,7 +67,17 @@ async function preprocessImage(imagePath) {
   const scaledWidth = Math.round(originalWidth * scale);
   const scaledHeight = Math.round(originalHeight * scale);
 
+  console.log("Metadata:", {
+    originalWidth,
+    originalHeight,
+    scale,
+    scaledWidth,
+    scaledHeight,
+  });
+
+  // Process the image: auto-rotate, resize, extend, convert to JPEG, and output raw pixel data
   const rawBuffer = await sharp(imagePath)
+    .rotate() // auto-rotate using EXIF
     .resize(scaledWidth, scaledHeight)
     .extend({
       top: Math.round((targetSize - scaledHeight) / 2),
@@ -70,15 +89,47 @@ async function preprocessImage(imagePath) {
       background: { r: 0, g: 0, b: 0, alpha: 1 },
     })
     .removeAlpha()
+    .toFormat("jpeg")
     .raw()
     .toBuffer();
 
+  // Normalize pixel values
   const float32Data = new Float32Array(rawBuffer.length);
   for (let i = 0; i < rawBuffer.length; i++) {
     float32Data[i] = rawBuffer[i] / 255.0;
   }
 
   return { buffer: float32Data, originalWidth, originalHeight, scale };
+}
+
+// Example processDetections function with adjusted threshold logging
+function processDetections(output, originalWidth, originalHeight, scale) {
+  const detections = [];
+  const rawData = Array.from(output.data);
+  console.log("Processing detection output, total length:", rawData.length);
+
+  // Adjust this threshold if necessary; you may log each confidence value
+  const threshold = 0.5; // Example threshold if values are normalized (0-1)
+
+  for (let i = 0; i < rawData.length; i += 6) {
+    const [x_center, y_center, width, height, confidence, classId] =
+      rawData.slice(i, i + 6);
+    console.log(`Detection ${i / 6}: confidence=${confidence}`);
+
+    // If your model outputs unnormalized confidence values, adjust the condition accordingly.
+    if (confidence > threshold) {
+      detections.push({
+        x: ((x_center / targetSize) * originalWidth) / scale,
+        y: ((y_center / targetSize) * originalHeight) / scale,
+        width: ((width / targetSize) * originalWidth) / scale,
+        height: ((height / targetSize) * originalHeight) / scale,
+        confidence,
+        classId,
+      });
+    }
+  }
+  console.log("Final detections count:", detections.length);
+  return detections;
 }
 
 // Process ONNX Detections
@@ -90,7 +141,7 @@ function processDetections(output, originalWidth, originalHeight, scale) {
     const [x_center, y_center, width, height, confidence, classId] =
       rawData.slice(i, i + 6);
 
-    if (confidence > 0.5) {
+    if (confidence > 600.5) {
       detections.push({
         x: ((x_center / targetSize) * originalWidth) / scale,
         y: ((y_center / targetSize) * originalHeight) / scale,
@@ -104,32 +155,42 @@ function processDetections(output, originalWidth, originalHeight, scale) {
   return detections;
 }
 
-// Prediction Endpoint
 app.post("/predict", upload.single("image"), async (req, res) => {
   try {
+    console.log("Received file path:", req.file.path);
+
+    // Preprocess the image (auto-rotate and convert to JPEG)
     const { buffer, originalWidth, originalHeight, scale } =
       await preprocessImage(req.file.path);
+
+    // Create the input tensor for ONNX model
     const tensor = new ort.Tensor("float32", new Float32Array(buffer), [
       1,
       3,
       targetSize,
       targetSize,
     ]);
+
+    // Run inference
     const outputs = await session.run({ images: tensor });
     const output = outputs[Object.keys(outputs)[0]];
-
     if (!output || !output.data) throw new Error("Invalid Model Output");
 
+    // Process model detections; adjust threshold in processDetections if needed
     const detections = processDetections(
       output,
       originalWidth,
       originalHeight,
       scale
     );
+
+    // Log detections for debugging
+    console.log("Detections:", detections);
+
     const imageId = uuidv4();
     const resultImagePath = path.join(__dirname, "uploads", `${imageId}.jpg`);
 
-    // Draw Bounding Boxes
+    // Create an SVG overlay with bounding boxes
     const svg = `<svg width="${originalWidth}" height="${originalHeight}">
       ${detections
         .map(
@@ -143,14 +204,21 @@ app.post("/predict", upload.single("image"), async (req, res) => {
       .composite([{ input: Buffer.from(svg), blend: "over" }])
       .toFile(resultImagePath);
 
-    // Save to MongoDB
+    // Save detection result to database
     const detectionData = await Detection.create({
       imageUrl: `http://localhost:5000/uploads/${imageId}.jpg`,
       detections,
       originalWidth,
       originalHeight,
-      userId: req.body.userId, // Assuming frontend sends user ID
+      userId: req.body.userId, // Make sure the frontend sends the userId correctly
       status: "pending",
+    });
+
+    console.log("Prediction successful:", {
+      success: true,
+      detectionId: detectionData._id,
+      imageUrl: detectionData.imageUrl,
+      detections,
     });
 
     res.json({

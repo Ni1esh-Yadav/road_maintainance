@@ -11,7 +11,7 @@ const RegisterAdmin = () => {
 
   const handleRegister = async () => {
     try {
-      await axios.post("http://192.168.7.80:5000/register-admin", {
+      await axios.post("http://192.168.1.12:5000/register-admin", {
         name,
         email,
         password,

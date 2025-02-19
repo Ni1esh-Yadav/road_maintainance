@@ -1,23 +1,32 @@
+// app/(auth)/login.tsx
 import { useState } from "react";
 import { View, Text, TextInput, Button, Alert, StyleSheet } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import axios from "axios";
 import { useRouter } from "expo-router";
+import { useUser } from "../context/UserContext"; // adjust the path as needed
 
 const Login = () => {
   const router = useRouter();
+  const { setUser } = useUser();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [role, setRole] = useState("");
 
   const handleLogin = async () => {
     try {
-      const res = await axios.post("http://192.168.7.80:5000/login", {
+      const res = await axios.post("http://192.168.1.12:5000/login", {
         email,
         password,
         role,
       });
       await AsyncStorage.setItem("token", res.data.token);
+      console.log("printing res in login.tsx", res.data);
+      console.log("inside login route printing userid", res.data.user.id);
+
+      // Save the user data to context
+      setUser(res.data.user);
+
       Alert.alert("Success", "Logged in successfully");
       router.push("../(user)/home");
     } catch (err) {
