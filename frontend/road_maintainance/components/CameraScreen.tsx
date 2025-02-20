@@ -6,14 +6,12 @@ import {
   TouchableOpacity,
   Text,
   Image,
-  Dimensions,
 } from "react-native";
-import { CameraView, CameraType, useCameraPermissions } from "expo-camera";
+import { CameraView, useCameraPermissions } from "expo-camera";
 import * as FileSystem from "expo-file-system";
-import * as Location from "expo-location";
 import { useRouter } from "expo-router";
-import { useLocalSearchParams } from "expo-router";
 import { useUser } from "../app/context/UserContext";
+import * as ImageManipulator from "expo-image-manipulator";
 
 const CameraScreen = () => {
   const cameraRef = useRef<CameraView | null>(null);
@@ -22,8 +20,7 @@ const CameraScreen = () => {
   const [isProcessing, setIsProcessing] = useState(false);
   const [networkError, setNetworkError] = useState<string | null>(null);
   const router = useRouter();
-  const { user, setUser } = useUser();
-  console.log("i am inside CameraScreen", user);
+  const { user } = useUser();
 
   // Request Camera Permission
   useEffect(() => {
@@ -45,6 +42,7 @@ const CameraScreen = () => {
       setIsProcessing(true);
       setNetworkError(null);
 
+      // Capture the photo
       const photo = await cameraRef.current.takePictureAsync({
         quality: 0.8,
         base64: true,
@@ -54,9 +52,25 @@ const CameraScreen = () => {
         throw new Error("Failed to capture photo");
       }
 
-      setPhotoUri(photo.uri);
+      // Resize the image to your desired "original" dimensions
+      const manipulatedPhoto = await ImageManipulator.manipulateAsync(
+        photo.uri,
+        [{ resize: { width: 612, height: 408 } }],
+        { compress: 0.8, base64: true }
+      );
 
-      await sendToBackend(photo.uri);
+      // Optionally, if you need to apply an additional scale (e.g., to get 640×427)
+      const finalPhoto = await ImageManipulator.manipulateAsync(
+        manipulatedPhoto.uri,
+        [{ resize: { width: 640, height: 427 } }],
+        { compress: 0.8, base64: true }
+      );
+
+      // Update the preview with the final image URI
+      setPhotoUri(finalPhoto.uri);
+
+      // Send the final image to the backend
+      await sendToBackend(finalPhoto.uri);
     } catch (error) {
       Alert.alert("Error", "Failed to capture and process the image.");
       console.error("Camera capture error:", error);
@@ -78,7 +92,7 @@ const CameraScreen = () => {
       if (!user || !user.id) {
         throw new Error("User ID is missing");
       }
-      formData.append("userId", user?.id);
+      formData.append("userId", user.id);
 
       const response = await fetch("http://192.168.1.12:5000/predict", {
         method: "POST",

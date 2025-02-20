@@ -103,34 +103,34 @@ async function preprocessImage(imagePath) {
 }
 
 // Example processDetections function with adjusted threshold logging
-function processDetections(output, originalWidth, originalHeight, scale) {
-  const detections = [];
-  const rawData = Array.from(output.data);
-  console.log("Processing detection output, total length:", rawData.length);
+// function processDetections(output, originalWidth, originalHeight, scale) {
+//   const detections = [];
+//   const rawData = Array.from(output.data);
+//   console.log("Processing detection output, total length:", rawData.length);
 
-  // Adjust this threshold if necessary; you may log each confidence value
-  const threshold = 0.5; // Example threshold if values are normalized (0-1)
+//   // Adjust this threshold if necessary; you may log each confidence value
+//   const threshold = 0.5; // Example threshold if values are normalized (0-1)
 
-  for (let i = 0; i < rawData.length; i += 6) {
-    const [x_center, y_center, width, height, confidence, classId] =
-      rawData.slice(i, i + 6);
-    console.log(`Detection ${i / 6}: confidence=${confidence}`);
+//   for (let i = 0; i < rawData.length; i += 6) {
+//     const [x_center, y_center, width, height, confidence, classId] =
+//       rawData.slice(i, i + 6);
+//     console.log(`Detection ${i / 6}: confidence=${confidence}`);
 
-    // If your model outputs unnormalized confidence values, adjust the condition accordingly.
-    if (confidence > threshold) {
-      detections.push({
-        x: ((x_center / targetSize) * originalWidth) / scale,
-        y: ((y_center / targetSize) * originalHeight) / scale,
-        width: ((width / targetSize) * originalWidth) / scale,
-        height: ((height / targetSize) * originalHeight) / scale,
-        confidence,
-        classId,
-      });
-    }
-  }
-  console.log("Final detections count:", detections.length);
-  return detections;
-}
+//     // If your model outputs unnormalized confidence values, adjust the condition accordingly.
+//     if (confidence > threshold) {
+//       detections.push({
+//         x: ((x_center / targetSize) * originalWidth) / scale,
+//         y: ((y_center / targetSize) * originalHeight) / scale,
+//         width: ((width / targetSize) * originalWidth) / scale,
+//         height: ((height / targetSize) * originalHeight) / scale,
+//         confidence,
+//         classId,
+//       });
+//     }
+//   }
+//   console.log("Final detections count:", detections.length);
+//   return detections;
+// }
 
 // Process ONNX Detections
 function processDetections(output, originalWidth, originalHeight, scale) {
@@ -141,7 +141,7 @@ function processDetections(output, originalWidth, originalHeight, scale) {
     const [x_center, y_center, width, height, confidence, classId] =
       rawData.slice(i, i + 6);
 
-    if (confidence > 600.5) {
+    if (confidence > 634.5) {
       detections.push({
         x: ((x_center / targetSize) * originalWidth) / scale,
         y: ((y_center / targetSize) * originalHeight) / scale,
@@ -162,6 +162,11 @@ app.post("/predict", upload.single("image"), async (req, res) => {
     // Preprocess the image (auto-rotate and convert to JPEG)
     const { buffer, originalWidth, originalHeight, scale } =
       await preprocessImage(req.file.path);
+
+    // Log the dimensions and scale for reference
+    console.log("Image Dimensions - Width:", originalWidth);
+    console.log("Image Dimensions - Height:", originalHeight);
+    console.log("Image Scale:", scale);
 
     // Create the input tensor for ONNX model
     const tensor = new ort.Tensor("float32", new Float32Array(buffer), [
@@ -185,7 +190,7 @@ app.post("/predict", upload.single("image"), async (req, res) => {
     );
 
     // Log detections for debugging
-    console.log("Detections:", detections);
+    // console.log("Detections:", detections);
 
     const imageId = uuidv4();
     const resultImagePath = path.join(__dirname, "uploads", `${imageId}.jpg`);
