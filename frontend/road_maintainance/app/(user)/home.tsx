@@ -1,29 +1,9 @@
-import React, { useEffect, useState } from "react";
 import { View, Text, Button, StyleSheet } from "react-native";
-import { useRouter } from "expo-router";
-import { getToken } from "../../utils/auth";
-import AsyncStorage from "@react-native-async-storage/async-storage";
 import DetectionsScreen from "../../components/DetectionsScreen";
 import { useUser } from "../context/UserContext";
 
 const Home = () => {
-  const router = useRouter();
-  const [authenticated, setAuthenticated] = useState(false);
-  const { user, setUser } = useUser();
-
-  console.log("Inside Home component, user:", user);
-
-  useEffect(() => {
-    const checkAuth = async () => {
-      const token = await getToken();
-      if (!token) {
-        router.replace("./(auth)/login");
-      } else {
-        setAuthenticated(true);
-      }
-    };
-    checkAuth();
-  }, [router]);
+  const { user } = useUser();
 
   if (!user || !user.id) {
     return (
@@ -33,19 +13,12 @@ const Home = () => {
     );
   }
 
-  return authenticated ? (
+  return (
     <View style={styles.container}>
       <Text style={styles.welcomeText}>Welcome to Home Page</Text>
       <DetectionsScreen userId={user.id} />
-      <Button
-        title="Logout"
-        onPress={() => {
-          AsyncStorage.removeItem("token");
-          router.replace("./(auth)/login");
-        }}
-      />
     </View>
-  ) : null;
+  );
 };
 
 const styles = StyleSheet.create({

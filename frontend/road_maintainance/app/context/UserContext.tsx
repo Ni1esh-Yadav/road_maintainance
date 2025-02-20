@@ -1,11 +1,10 @@
-// app/context/UserContext.tsx
 import React, { createContext, useState, useContext } from "react";
 
 export interface User {
   id: string;
-  email?: string;
+  name?: string;
   role?: string;
-  // add more fields as needed
+  email?: string;
 }
 
 interface UserContextType {

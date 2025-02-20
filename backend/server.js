@@ -141,7 +141,7 @@ function processDetections(output, originalWidth, originalHeight, scale) {
     const [x_center, y_center, width, height, confidence, classId] =
       rawData.slice(i, i + 6);
 
-    if (confidence > 634.5) {
+    if (confidence > 1.5) {
       detections.push({
         x: ((x_center / targetSize) * originalWidth) / scale,
         y: ((y_center / targetSize) * originalHeight) / scale,
@@ -337,7 +337,12 @@ app.post(
       });
       res.json({
         token,
-        user: { id: user._id, name: user.name, role: user.role },
+        user: {
+          id: user._id,
+          name: user.name,
+          role: user.role,
+          email: user.email,
+        },
       });
     } catch (error) {
       res.status(500).json({ error: "Server error" });
