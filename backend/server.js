@@ -37,7 +37,7 @@ let session;
 (async () => {
   try {
     session = await ort.InferenceSession.create(
-      path.join(__dirname, "yolov8l_best_pothole.onnx")
+      path.join(__dirname, "YOLOv8_Small_RDD.onnx")
     );
     console.log("✅ ONNX Model Loaded Successfully");
   } catch (e) {
