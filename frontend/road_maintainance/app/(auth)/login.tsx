@@ -22,13 +22,19 @@ const Login = () => {
       });
       await AsyncStorage.setItem("token", res.data.token);
       console.log("printing res in login.tsx", res.data);
-      console.log("inside login route printing userid", res.data.user.id);
+      setRole(res.data.user.role);
+
+      // console.log("inside login route printing userid", res.data.user.id);
 
       // Save the user data to context
       setUser(res.data.user);
 
       Alert.alert("Success", "Logged in successfully");
-      router.push("../(user)/home");
+      if (role == "user") {
+        router.push("../(user)/home");
+      } else {
+        router.push("../(admin)/admin");
+      }
     } catch (err) {
       Alert.alert("Error", "Invalid email or password");
     }

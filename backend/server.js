@@ -37,7 +37,7 @@ let session;
 (async () => {
   try {
     session = await ort.InferenceSession.create(
-      path.join(__dirname, "YOLOv8_Small_RDD.onnx")
+      path.join(__dirname, "yolov8l_best_pothole.onnx")
     );
     console.log("✅ ONNX Model Loaded Successfully");
   } catch (e) {
@@ -141,7 +141,7 @@ function processDetections(output, originalWidth, originalHeight, scale) {
     const [x_center, y_center, width, height, confidence, classId] =
       rawData.slice(i, i + 6);
 
-    if (confidence > 1.5) {
+    if (confidence > 50.5) {
       detections.push({
         x: ((x_center / targetSize) * originalWidth) / scale,
         y: ((y_center / targetSize) * originalHeight) / scale,
@@ -256,6 +256,31 @@ app.put("/approve/:id", auth, async (req, res) => {
 
   res.json({ message: "Image approved", detection });
 });
+
+app.get("/all", async (req, res) => {
+  try {
+    const detections = await Detection.find().sort({ createdAt: -1 });
+    console.log("inside app.get/all route printing detection", detections);
+    res.json({ success: true, detections });
+  } catch (error) {
+    res.status(500).json({ success: false, message: "Server Error" });
+  }
+});
+
+// Admin Rejected Endpoint
+// app.put("/Rejected/:id", auth, async (req, res) => {
+//   if (req.user.role !== "admin")
+//     return res.status(403).json({ error: "Forbidden" });
+
+//   const detection = await Detection.findByIdAndUpdate(
+//     req.params.id,
+//     { status: "Rejected" },
+//     { new: true }
+//   );
+//   if (!detection) return res.status(404).json({ error: "Detection not found" });
+
+//   res.json({ message: "Image Rejected", detection });
+// });
 
 // Fetch Detections for User
 app.get("/detections/:userId", async (req, res) => {

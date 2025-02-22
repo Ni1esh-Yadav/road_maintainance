@@ -1,7 +1,7 @@
 from ultralytics import YOLO
 
 # Load the trained model
-model = YOLO("YOLOv8_Small_RDD.pt")
+model = YOLO("yolov8l_best_pothole.pt")
 
 # Export to ONNX
 model.export(format="onnx")

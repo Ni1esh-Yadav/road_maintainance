@@ -44,7 +44,7 @@ const DetectionsScreen = ({ userId }: { userId: string }) => {
       try {
         console.log("Fetching detections for user:", userId);
         const response = await fetch(
-          `http://192.168.1.12:5000/detections/${userId}`
+          `http://192.168.24.213:5000/detections/${userId}`
         );
         const data = await response.json();
         console.log("Fetched detections:", data);
@@ -58,6 +58,7 @@ const DetectionsScreen = ({ userId }: { userId: string }) => {
           (detection: Detection) => ({
             ...detection,
             imageUrl: detection.imageUrl.replace("localhost", "192.168.1.12"),
+            // imageUrl: detection.imageUrl.replace("localhost", "192.168.24.213"),
           })
         );
 
